@@ -1,8 +1,13 @@
+2017-10-04  David Freese  <w1hkj@bellsouth.net>
+
+	96cf00c: alpha
+	98d23af: s/n eval
+	982a78a: win mingw
+	dc740f5: INSTALL
+	2c8072f: Arch linux code changes
 
 
 =Version 2.0.2=
-
-2016-10-07  David Freese  <iam_w1hkj@w1hkj.com>
 
 	f0bb4b7: OSX Xcode 8
 	f1c4978: Noise generator
