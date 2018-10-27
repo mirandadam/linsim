@@ -1,0 +1,14 @@
+/config.log
+/config.status
+/configure
+Makefile
+/autom4te.cache/
+/build-aux/
+*.o
+.deps/
+.dirstamp
+/src/Makefile.in
+/src/config.h
+/src/config.h.in
+/src/linsim
+/src/stamp-h1
