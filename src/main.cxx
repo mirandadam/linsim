@@ -122,6 +122,11 @@ SIM sim_test;
 _vals sim_vals;
 string fname_in;
 string fname_out;
+string arg_fname_in;	  //stores the --input_file argument
+string arg_output_folder; //stores the --output_folder argument
+string arg_run_batch;	 //stores the presence of the --run-batch argument
+pthread_mutex_t batch_mutex = PTHREAD_MUTEX_INITIALIZER;
+int batch_wait_count = 0;
 
 Fl_Double_Window *simulator_selector = (Fl_Double_Window *)0;
 Fl_Double_Window *batch_process_selector = (Fl_Double_Window *)0;
@@ -339,28 +344,77 @@ int main(int argc, char **argv)
 	linsim_window->show(argc, argv);
 #endif
 
+	if (arg_run_batch.empty())
+	{
 	string csv_fname;
 	csv_fname.assign(HomeDir).append("linsim.simulations.csv");
 	simulations.filename(csv_fname);
-	txt_simulations_filename->value("linsim.simulations.csv");
+	}
+	else
+	{
+		simulations.filename(arg_run_batch);
+	}
+	txt_simulations_filename->value(simulations.filename().c_str());
+
 	simulations.load();
+
+	if (!arg_fname_in.empty())
+	{
+		fname_in = arg_fname_in;
+		txt_input_file->value(fname_in.c_str());
+	}
+
+	if (!arg_output_folder.empty())
+	{
+		finp_output_wav_folder->value(arg_output_folder.c_str());
+		btn_same_as_input_file->value(0);
+	}
 
 	start_computation_thread();
 
+	if (!arg_run_batch.empty())
+	{
+		cout << "Running batch simulation." << endl
+			 << std::flush;
+		simulations.filename(arg_run_batch);
+		open_batch_process_dialog();
+		select_all_simulations();
+		batch_process_items();
+	}
 	return Fl::run();
 }
 
-int parse_args(int argc, char **argv, int& idx)
+int parse_args(int argc, char **argv, int &idx)
 {
-	if (strcasecmp("--help", argv[idx]) == 0) {
-		printf("Usage: \n\
-  --help this help text\n\
-  --version\n");
-		exit(0);
-	}
-	if (strcasecmp("--version", argv[idx]) == 0) {
-		printf("Version: " VERSION "\n");
-		exit (0);
+	for (idx = 1; idx < argc; idx++)
+	{
+		if (strcasecmp("--help", argv[idx]) == 0)
+		{
+			printf("Usage: \n"
+				   "  --help this help text\n"
+				   "  --version\n"
+				   "  --input_file=[input_file.wav]\n"
+				   "  --output_folder=[output_folder]\n"
+				   "  --run_batch=[simulation_file.csv]\n");
+			exit(0);
+		}
+		if (strcasecmp("--version", argv[idx]) == 0)
+		{
+			printf("Version: " VERSION "\n");
+			exit(0);
+		}
+		if (strncasecmp("--input_file=", argv[idx], sizeof("--input_file=") - 1) == 0)
+		{
+			arg_fname_in = argv[idx] + sizeof("--input_file=") - 1;
+		}
+		if (strncasecmp("--output_folder=", argv[idx], sizeof("--output_folder=") - 1) == 0)
+		{
+			arg_output_folder = argv[idx] + sizeof("--output_folder=") - 1;
+		}
+		if (strncasecmp("--run_batch=", argv[idx], sizeof("--run_batch=") - 1) == 0)
+		{
+			arg_run_batch = argv[idx] + sizeof("--run_batch=") - 1;
+		}
 	}
 	return 0;
 }
@@ -656,12 +710,18 @@ static std::string ofname = "";
 void show_ofname(void *)
 {
 	txt_output_file->value(ofname.c_str());
+	pthread_mutex_lock(&batch_mutex);
+	batch_wait_count--;
+	pthread_mutex_unlock(&batch_mutex);
 }
 
 static void show_what_simulation(void *d)
 {
 	int n = reinterpret_cast<long long>(d);
 	txt_simulation->value(simulations.dbrecs[n].title.c_str());
+	pthread_mutex_lock(&batch_mutex);
+	batch_wait_count--;
+	pthread_mutex_unlock(&batch_mutex);
 }
 
 static void show_p0(void *d)
@@ -671,6 +731,9 @@ static void show_p0(void *d)
 	p0_on->value(b);
 	inp_spread0->value(simulations.dbrecs[n].spread_0.c_str());
 	inp_offset0->value(simulations.dbrecs[n].offset_0.c_str());
+	pthread_mutex_lock(&batch_mutex);
+	batch_wait_count--;
+	pthread_mutex_unlock(&batch_mutex);
 }
 
 static void show_p1(void *d)
@@ -681,6 +744,9 @@ static void show_p1(void *d)
 	inp_delay1->value(simulations.dbrecs[n].delay_1.c_str());
 	inp_spread1->value(simulations.dbrecs[n].spread_1.c_str());
 	inp_offset1->value(simulations.dbrecs[n].offset_1.c_str());
+	pthread_mutex_lock(&batch_mutex);
+	batch_wait_count--;
+	pthread_mutex_unlock(&batch_mutex);
 }
 
 static void show_p2(void *d)
@@ -691,6 +757,9 @@ static void show_p2(void *d)
 	inp_delay2->value(simulations.dbrecs[n].delay_2.c_str());
 	inp_spread2->value(simulations.dbrecs[n].spread_2.c_str());
 	inp_offset2->value(simulations.dbrecs[n].offset_2.c_str());
+	pthread_mutex_lock(&batch_mutex);
+	batch_wait_count--;
+	pthread_mutex_unlock(&batch_mutex);
 }
 
 static void show_simulations(void *d)
@@ -699,6 +768,9 @@ static void show_simulations(void *d)
 	bool b = simulations.dbrecs[n].awgn == "1";
 	inp_AWGN_on->value(b);
 	inp_AWGN_rms->value(simulations.dbrecs[n].sn.c_str());
+	pthread_mutex_lock(&batch_mutex);
+	batch_wait_count--;
+	pthread_mutex_unlock(&batch_mutex);
 }
 
 void select_entry(int n)
@@ -854,6 +926,10 @@ void process_batch_items()
 
 			fname_out.append(simname).append(".wav");
 			ofname = fname_out;
+			//batch_wait_count tracks the number of pending jobs.
+			//each job will safely decrement this counter, once it's
+			//value reaches zero we know that it's safe to continue.
+			batch_wait_count = 6;
 			Fl::awake(show_ofname);
 			Fl::awake(show_what_simulation, reinterpret_cast<void *>(n));
 			Fl::awake(show_p0, reinterpret_cast<void *>(n));
@@ -861,6 +937,19 @@ void process_batch_items()
 			Fl::awake(show_p2, reinterpret_cast<void *>(n));
 			Fl::awake(show_simulations, reinterpret_cast<void *>(n));
 			if (op_abort) break;
+			bool batch_wait = true;
+			while (batch_wait)
+			{
+				MilliSleep(50);
+				Fl::awake();
+				//entering critical section
+				pthread_mutex_lock(&batch_mutex);
+				//checking if all the pending jobs have finished
+				if (batch_wait_count <= 0)
+					batch_wait = false;
+				pthread_mutex_unlock(&batch_mutex);
+				//cout << "Waiting for batch parameters to load." << endl << std::flush;
+			}
 
 			generate_output();
 		}
@@ -1010,7 +1099,6 @@ void abort_simulation()
 	op_abort = true;
 }
 
-
 void output_folder_select()
 {
 	string dir = fname_in;
@@ -1044,12 +1132,13 @@ void choose_batch_folder()
 char szAbout[200];
 void about()
 {
-    snprintf (szAbout, sizeof(szAbout),"\
-%s\n\n\
-HF path simulation program\n\
-Author: W1HKJ\n\n\
-Based on Moe Wheatley's PathSim, @ AE4JY\n\n\
-Report problems to %s", PACKAGE_STRING, PACKAGE_BUGREPORT);
+	snprintf(szAbout, sizeof(szAbout),
+			 "%s\n\n"
+			 "HF path simulation program\n"
+			 "Author: W1HKJ\n\n"
+			 "Based on Moe Wheatley's PathSim, @ AE4JY\n\n"
+			 "Report problems to %s",
+			 PACKAGE_STRING, PACKAGE_BUGREPORT);
 	fl_message("%s", szAbout);
 }
 
@@ -1070,4 +1159,3 @@ void guideURL()
 	visit_URL((void *)deffname.c_str());
 #endif
 }
-
