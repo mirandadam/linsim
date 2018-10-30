@@ -122,11 +122,13 @@ SIM sim_test;
 _vals sim_vals;
 string fname_in;
 string fname_out;
+
 string arg_fname_in;	  //stores the --input_file argument
 string arg_output_folder; //stores the --output_folder argument
 string arg_run_batch;	 //stores the presence of the --run-batch argument
 pthread_mutex_t batch_mutex = PTHREAD_MUTEX_INITIALIZER;
 int batch_wait_count = 0;
+void exit_when_idle(void *data);
 
 Fl_Double_Window *simulator_selector = (Fl_Double_Window *)0;
 Fl_Double_Window *batch_process_selector = (Fl_Double_Window *)0;
@@ -224,6 +226,8 @@ void * comp_loop(void *d)
 					Fl::awake(reset_buttons);
 					Fl::awake(clear_main_dialog);
 					op_abort = false;
+					if (!arg_run_batch.empty())
+						Fl::awake(exit_when_idle);
 					break;
 				case AWGN_SERIES :
 					process_AWGN_series();
@@ -276,6 +280,16 @@ void exit_main(Fl_Widget *w)
 {
 	if (Fl::event_key() == FL_Escape)
 		return;
+	clean_exit();
+}
+
+void exit_when_idle(void *data)
+{
+	while (simulation != IDLE)
+	{
+		MilliSleep(50);
+		Fl::awake();
+	}
 	clean_exit();
 }
 
